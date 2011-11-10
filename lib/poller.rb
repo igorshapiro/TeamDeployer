@@ -22,7 +22,6 @@ class ProjectPoller
     @server = Teamcity.new(config["server"]["host"], config["server"]["port"],
                           config["server"]["user"], config["server"]["password"])
     @project_defs = config["projects"].map { |pd| Project.new(pd) }
-    puts @project_defs.inspect
     prepare_environment
   end
 
@@ -32,21 +31,34 @@ class ProjectPoller
 
   def check_and_deploy
     @server.projects.each do |prj|
-      puts prj.name
       prj_def = @project_defs.detect {|pd| pd.project_name == prj.name}
-      (prj.builds :sinceBuild => @latest_build_id).each do |b|
+      (prj.builds :sinceBuild => @latest_build_id, :status => "SUCCESS").each do |b|
+        puts b.commit_message
         artifact_url = b.artifact_path prj_def.artifact_name
         puts "Downloading #{artifact_url}"
 
         filename = artifact_url.split('/').last
 
-        data = @server.artifact artifact_url
-        file = File.new("downloads/#{filename}", File::CREAT | File::TRUNC | File::RDWR)
+        begin
+          data = @server.resource artifact_url
+        rescue
+          puts "Unable to download #{artifact_url}"
+          next
+        end
+
+        file = File.new("downloads/#{filename}", "wb")
         file.write(data)
         file.close
+
+        deploy prj_def, file.path
+
         @latest_build_id = b.id.to_i if b.id.to_i > @latest_build_id
-      end
+      end unless prj_def.nil?
     end
+  end
+
+  def deploy project, artifact_path
+    puts "Deploying project #{project.project_name} from #{artifact_path}"
   end
 
   def poll
