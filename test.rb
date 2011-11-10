@@ -33,6 +33,10 @@ config = YAML.load_file("configuration.yaml")
 server = Teamcity.new(config["server"]["host"], config["server"]["port"],
                       config["server"]["user"], config["server"]["password"])
 
+config["projects"].each do |prj|
+  puts prj.inspect
+end
+
 server.projects.each do |prj|
   #puts prj.inspect
   prj.dump
