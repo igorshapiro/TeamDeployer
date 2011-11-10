@@ -18,11 +18,26 @@ class ProjectPoller
 
   def initialize
     @latest_build_id = 1
+    begin
+      file = File.new("last_build_id")
+      @latest_build_id = file.read.to_i
+      file.close
+    rescue
+    end
+
     config = YAML.load_file("configuration.yaml")
     @server = Teamcity.new(config["server"]["host"], config["server"]["port"],
                           config["server"]["user"], config["server"]["password"])
     @project_defs = config["projects"].map { |pd| Project.new(pd) }
     prepare_environment
+  end
+
+  def update_last_build_id build_id
+    @latest_build_id = build_id
+
+    file = File.new("last_build_id", "w")
+    file.write(@latest_build_id.to_s)
+    file.close
   end
 
   def prepare_environment
@@ -51,8 +66,7 @@ class ProjectPoller
         file.close
 
         deploy prj_def, file.path
-
-        @latest_build_id = b.id.to_i if b.id.to_i > @latest_build_id
+        update_last_build_id b.id.to_i if b.id.to_i > @latest_build_id
       end unless prj_def.nil?
     end
   end
