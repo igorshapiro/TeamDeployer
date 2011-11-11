@@ -2,3 +2,25 @@ Polls TeamCity for new builds and deploys them.
 Really sorry for the ugly code. First steps with Ruby :)
 -----------------------------------------------
 
+Prerequisites:
+- Ruby 1.9.2 (didn't test on lower)
+- Install "IIS Management Scripts and Tools" from "Add/Remove programs"
+- Artifacts are expected to be in .zip format
+
+Configuration file format:
+server:
+  host: localhost               # teamcity server host name
+  port: 8080                    # teamcity server port
+  user: me                      # teamcity user (dedicated deployment user is recommended)
+  password: my_pwd              # password
+projects:
+  -
+    project-name: WebProject                    # project name from Teamcity
+    artifact-name: "WebProject-@build.zip"      # Artifact name. @build will be replaced
+    app-pool-name: "WebSite"                    # IIS Application pool name (optional)
+    deploy-dir: "d:\deploy\websites\WebProject" # Target directory to deploy to
+  -
+    project-name: WinService                        # project name from Teamcity
+    artifact-name: WinService-@build.zip
+    service-name: "Licensario Publishers Server"    # Windows Service name (will be stopped for the duration of the deployment)
+    deploy-dir: "d:\deploy\services\service1"       # Target directory to deploy to
