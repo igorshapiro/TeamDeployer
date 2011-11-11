@@ -4,7 +4,6 @@ require "yaml"
 require_relative "teamcity-rest-client-extensions"
 require_relative "iis"
 require_relative "windows_service"
-require 'inetmgr'
 require 'zip/zip'
 require 'fileutils'
 
@@ -12,6 +11,7 @@ class ProjectPoller
   @latest_build_id
   @server
   @project_defs
+  @deploy_keyword
 
   class Project
     attr_reader :project_name, :artifact_name, :iis_app_pool, :service_name, :deploy_dir
@@ -37,6 +37,7 @@ class ProjectPoller
     config = YAML.load_file("configuration.yaml")
     @server = Teamcity.new(config["server"]["host"], config["server"]["port"],
                           config["server"]["user"], config["server"]["password"])
+    @deploy_keyword = config["server"]["deploy-keyword"]
     @project_defs = config["projects"].map { |pd| Project.new(pd) }
     prepare_environment
   end
@@ -57,7 +58,10 @@ class ProjectPoller
     @server.projects.each do |prj|
       prj_def = @project_defs.detect {|pd| pd.project_name == prj.name}
       (prj.builds :sinceBuild => @latest_build_id, :status => "SUCCESS").each do |b|
-        puts b.commit_message
+        commit_message = b.commit_message
+
+        puts commit_message
+        next if commit_message.index(@deploy_keyword).nil?
         artifact_url = b.artifact_path prj_def.artifact_name
         puts "Downloading #{artifact_url}"
 
@@ -75,7 +79,7 @@ class ProjectPoller
         file.close
 
         deploy prj_def, b.number, file.path
-        #update_last_build_id b.id.to_i if b.id.to_i > @latest_build_id
+        update_last_build_id b.id.to_i if b.id.to_i > @latest_build_id
       end unless prj_def.nil?
     end
   end
@@ -101,6 +105,16 @@ class ProjectPoller
     end
   end
 
+  def backup project, version
+    archive_name = ""
+    ([""] + Array(1..1000)).find do |suf|
+      archive_name = File.join(project.deploy_dir, "..", "backup",
+                               "#{project.project_name.gsub(" ", "_")}-pre-#{version}-backup#{suf}.zip")
+      !File.exist? archive_name
+    end
+    zip_file project.deploy_dir, archive_name
+  end
+
   def deploy project, version, artifact_path
     version_file_path = "#{project.deploy_dir}\\.deployed_version"
     if (File.exist? version_file_path)
@@ -112,6 +126,9 @@ class ProjectPoller
 
     before_deploy project
 
+    backup project, b.number
+
+    puts "Deploying project #{project.project_name} from #{artifact_path}"
     FileUtils.mkdir_p project.deploy_dir unless Dir.exist? project.deploy_dir
     FileUtils.rm_rf "#{project.deploy_dir}\\bin" if Dir.exist? "#{project.deploy_dir}\\bin"
 
@@ -120,7 +137,6 @@ class ProjectPoller
     file.write(version)
     file.close
 
-    puts "Deploying project #{project.project_name} from #{artifact_path}"
     after_deploy project
   end
 
@@ -138,8 +154,28 @@ class ProjectPoller
        f_path=File.join(destination, f.name)
        FileUtils.mkdir_p(File.dirname(f_path))
        FileUtils.rm f_path if File.exist? f_path
-       zip_file.extract(f, f_path) #unless File.exist?(f_path)
+       zip_file.extract(f, f_path)
      }
     }
+  end
+
+  def zip_file (dir, archive)
+    gem 'rubyzip'
+    require 'zip/zip'
+    require 'zip/zipfilesystem'
+    dir.gsub!("\\", "/")
+    archive.gsub!("\\", "/")
+
+
+    puts "Compressing #{dir} to #{archive}"
+
+    archive_dir = File.dirname(archive)
+    FileUtils.mkdir_p archive_dir
+
+    Zip::ZipFile.open(archive, 'w') do |zipfile|
+      Dir["#{dir}/**/**"].reject{|f|f==archive}.each do |file|
+        zipfile.add(file.gsub(dir+'/',''),file)
+      end
+    end
   end
 end

@@ -13,7 +13,7 @@ module TeamcityRestClientExtensions
     def resource url
       prefix = url ""
       relative_url = (url.start_with? prefix) ? url.sub(prefix, "") : url
-      puts "Loading resource #{relative_url}"
+      #puts "Loading resource #{relative_url}"
       get relative_url
     end
   end
